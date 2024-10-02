@@ -1,0 +1,10 @@
+1)check if it’s a single measurement or group of measurement 
+2) we have to do correlation check
+3)check the track id database (should be global) and see track id it belong if its an existing track id 
+If it’s a single measurement -> if it matches the existing track id -> check the state if poss 1,tentative 1,firm (if its poss 1 do Initialize filter state,if its tent 1 do Initialize filter state and get the velocity vx,vy,vz, if its firm  do start filtering (do predict and update step)
+
+If it’s a multiple measurement -> if it matches the existing track id -> check the state if poss 1,tentative 1,firm -> perform JPDA(clusters,hypothesis and take the best hypothesis report as measurment for this step )->(if its poss 1 do Initialize filter state,if its tent 1 do Initialize filter state and get the velocity vx,vy,vz, if its firm  do start filtering (do predict and update step)
+
+If the measurement is not correlating or assigned to any exisiting track id -> then Initiate a new track id (take the free state from the track database)-> then assign that measurement to poss1 state and do Initialize filter state
+
+
