@@ -1,0 +1,245 @@
+import numpy as np
+import pandas as pd
+
+class CVFilter:
+    def __init__(self):
+        # Initialize the filter state and covariance matrix
+        self.Sf = np.zeros((6, 1))
+        self.Pf = np.eye(6)
+        self.Pp = np.eye(6)
+        self.Sp = np.zeros((6, 1))
+    
+    def initialize_filter_state(self, x, y, z, vx, vy, vz, t):
+        # Initialize the state vector with position and velocity
+        self.Sf = np.array([[x], [y], [z], [vx], [vy], [vz]])
+        # Optionally, initialize covariance matrices here
+
+    def predict_step(self, t):
+        # Implement the prediction step of the Kalman filter
+        # Update self.Sf and self.Pf based on the prediction model
+        pass
+
+    def update_step(self, Z):
+        # Implement the update step of the Kalman filter
+        # Use the measurement Z to update self.Sf and self.Pf
+        pass
+
+def read_measurements_from_csv(file_path):
+    # Read measurements from a CSV file and return as a list of tuples
+    df = pd.read_csv(file_path)
+    return df.values.tolist()
+
+def sph2cart(azimuth, elevation, radius):
+    # Convert spherical coordinates to Cartesian coordinates
+    x = radius * np.cos(elevation) * np.cos(azimuth)
+    y = radius * np.cos(elevation) * np.sin(azimuth)
+    z = radius * np.sin(elevation)
+    return x, y, z
+
+def correlate_measurement(track, measurement):
+    # Implement correlation logic (e.g., using distance or other metrics)
+    return True  # Replace with actual condition
+
+def calculate_velocity(track, x, y, z, mt):
+    # Calculate velocity based on previous track state
+    if 'times' in track:
+        last_time = track['times'][-1][0]  # Get last timestamp
+        dt = mt - last_time
+        if dt > 0:
+            vx = (x - track['Sf'][0]) / dt
+            vy = (y - track['Sf'][1]) / dt
+            vz = (z - track['Sf'][2]) / dt
+            return vx, vy, vz
+    return 0, 0, 0  # Default velocity if unable to calculate
+
+def form_measurement_groups(measurements, max_time_diff):
+    # Group measurements by time differences
+    groups = []
+    current_group = []
+
+    for measurement in measurements:
+        if not current_group:
+            current_group.append(measurement)
+        else:
+            last_time = current_group[-1][3]
+            if measurement[3] - last_time <= max_time_diff:
+                current_group.append(measurement)
+            else:
+                groups.append(current_group)
+                current_group = [measurement]
+
+    if current_group:
+        groups.append(current_group)
+
+    return groups
+
+def main():
+    file_path = 'ttk.csv'
+    measurements = read_measurements_from_csv(file_path)
+
+    kalman_filter = CVFilter()
+    measurement_groups = form_measurement_groups(measurements, max_time_diff=0.050)
+
+    global track_id_list  # Global list for track IDs
+    global tracks         # Global list for tracks
+    global hit_counts     # Global dictionary for hit counts
+    global miss_counts    # Global dictionary for miss counts
+    global firm_ids       # Global set for firm IDs
+    global state_map      # Global map for track states
+
+    # Initialize global variables
+    hit_counts = {}
+    miss_counts = {}
+    firm_ids = set()
+    state_map = {}
+
+    # Initialize track ID list with some dummy data
+    track_id_list = [{'id': i, 'state': 'free'} for i in range(10)]
+    tracks = []
+
+    for group_idx, group in enumerate(measurement_groups):
+        print(f"\nProcessing measurement group {group_idx + 1}...")
+
+        is_single_measurement = len(group) == 1
+
+        if is_single_measurement:
+            # Process single measurement
+            measurement = group[0]
+            rng, azm, ele, mt, md, *rest = measurement
+            print(f"Single Measurement: (az={azm}, el={ele}, r={rng}, t={mt}), md={md}")
+
+            x, y, z = sph2cart(azm, ele, rng)
+
+            assigned = False
+            for track_id, track in enumerate(tracks):
+                if not track:
+                    continue
+
+                # Check if the measurement correlates with existing track
+                if correlate_measurement(track, measurement):
+                    assigned = True
+                    current_state = state_map.get(track_id, None)
+
+                    print(f"Track {track_id} is in state: {current_state}")
+
+                    if current_state == 'Poss1':
+                        print("Poss1 state: Initializing filter...")
+                        kalman_filter.initialize_filter_state(x, y, z, 0, 0, 0, mt)
+                    elif current_state == 'Tentative1':
+                        print("Tentative1 state: Initializing filter and calculating velocity...")
+                        vx, vy, vz = calculate_velocity(track, x, y, z, mt)
+                        kalman_filter.initialize_filter_state(x, y, z, vx, vy, vz, mt)
+                    elif current_state == 'Firm':
+                        print("Firm state: Starting filtering process...")
+                        kalman_filter.predict_step(mt)
+                        Z = np.array([[x], [y], [z]])
+                        kalman_filter.update_step(Z)
+
+                    # Update track state
+                    track.update({
+                        'Sf': kalman_filter.Sf.copy(),
+                        'Pf': kalman_filter.Pf.copy(),
+                        'Pp': kalman_filter.Pp.copy(),
+                        'Sp': kalman_filter.Sp.copy()
+                    })
+                    break
+
+            # If not assigned, initiate a new track
+            if not assigned:
+                print("No existing track found. Initializing new track.")
+                free_track_idx = next((i for i, track in enumerate(track_id_list) if track['state'] == 'free'), None)
+                if free_track_idx is not None:
+                    new_track_id = track_id_list[free_track_idx]['id']
+                    tracks.append({
+                        'track_id': new_track_id,
+                        'measurements': [measurement],
+                        'Sf': np.zeros((6, 1)),
+                        'Pf': np.eye(6),
+                        'Pp': np.eye(6),
+                        'Sp': np.zeros((6, 1)),
+                        'current_state': 'Poss1'
+                    })
+                    track_id_list[free_track_idx]['state'] = 'occupied'
+                    kalman_filter.initialize_filter_state(x, y, z, 0, 0, 0, mt)
+                    tracks[-1]['Sf'] = kalman_filter.Sf.copy()
+                    tracks[-1]['Pf'] = kalman_filter.Pf.copy()
+                    hit_counts[new_track_id] = 1  # First hit
+                    miss_counts[new_track_id] = 0
+
+        else:
+            # Process multiple measurements
+            print("Multiple Measurements:")
+            reports = []
+            assigned_tracks = []
+            for measurement in group:
+                rng, azm, ele, mt, md, *rest = measurement
+                print(f"Measurement: (az={azm}, el={ele}, r={rng}, t={mt}), md={md}")
+                x, y, z = sph2cart(azm, ele, rng)
+                reports.append((x, y, z))
+
+                assigned = False
+                for track_id, track in enumerate(tracks):
+                    if not track:
+                        continue
+
+                    # Check if the measurement correlates with existing track
+                    if correlate_measurement(track, measurement):
+                        assigned = True
+                        assigned_tracks.append(track_id)
+                        current_state = state_map.get(track_id, None)
+
+                        print(f"Track {track_id} is in state: {current_state}")
+
+                        if current_state == 'Poss1':
+                            print("Poss1 state: Initializing filter...")
+                            kalman_filter.initialize_filter_state(x, y, z, 0, 0, 0, mt)
+                        elif current_state == 'Tentative1':
+                            print("Tentative1 state: Initializing filter and calculating velocity...")
+                            vx, vy, vz = calculate_velocity(track, x, y, z, mt)
+                            kalman_filter.initialize_filter_state(x, y, z, vx, vy, vz, mt)
+                        elif current_state == 'Firm':
+                            print("Firm state: Starting filtering process...")
+                            kalman_filter.predict_step(mt)
+                            Z = np.array([[x], [y], [z]])
+                            kalman_filter.update_step(Z)
+
+                        # Update track state
+                        track.update({
+                            'Sf': kalman_filter.Sf.copy(),
+                            'Pf': kalman_filter.Pf.copy(),
+                            'Pp': kalman_filter.Pp.copy(),
+                            'Sp': kalman_filter.Sp.copy()
+                        })
+                        break
+
+                if not assigned:
+                    print("No existing track found for this measurement. Initializing new track.")
+                    free_track_idx = next((i for i, track in enumerate(track_id_list) if track['state'] == 'free'), None)
+                    if free_track_idx is not None:
+                        new_track_id = track_id_list[free_track_idx]['id']
+                        tracks.append({
+                            'track_id': new_track_id,
+                            'measurements': [measurement],
+                            'Sf': np.zeros((6, 1)),
+                            'Pf': np.eye(6),
+                            'Pp': np.eye(6),
+                            'Sp': np.zeros((6, 1)),
+                            'current_state': 'Poss1'
+                        })
+                        track_id_list[free_track_idx]['state'] = 'occupied'
+                        kalman_filter.initialize_filter_state(x, y, z, 0, 0, 0, mt)
+                        tracks[-1]['Sf'] = kalman_filter.Sf.copy()
+                        tracks[-1]['Pf'] = kalman_filter.Pf.copy()
+                        hit_counts[new_track_id] = 1  # First hit
+                        miss_counts[new_track_id] = 0
+
+            # Perform JPDA for multiple measurements
+            if assigned_tracks:
+                print("Performing JPDA for assigned tracks...")
+                # Implement JPDA logic to process reports and generate best hypothesis
+                # This is a placeholder; actual JPDA implementation is needed
+
+    print("Tracking complete.")
+
+if __name__ == "__main__":
+    main()
