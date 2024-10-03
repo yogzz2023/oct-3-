@@ -1,0 +1,128 @@
+class Track:
+    def __init__(self, track_id):
+        self.track_id = track_id
+        self.measurements = []
+        self.state = 'Pos1'  # Possible states: 'Pos1', 'Tentative1', 'Firm'
+        self.filter_state = None  # Filter state
+        self.velocity = None  # Velocity vector: vx, vy, vz
+
+# Global Track Database
+track_database = {}
+
+# Function to check if a track ID exists in the global track database
+def check_track_id(track_id):
+    return track_id in track_database
+
+# Function to correlate measurement with existing tracks
+def correlate_measurement(measurement, track_database):
+    for track_id, track in track_database.items():
+        # Here we assume a correlation function that returns True if the measurement correlates with the track
+        if correlation_function(measurement, track):
+            return track_id
+    return None
+
+# JPDA Function (Clusters, Hypotheses, etc.)
+def jpda_for_multiple_measurements(cluster):
+    # Placeholder function: Implement JPDA, hypothesis generation, and selecting best hypothesis report
+    best_hypothesis = generate_hypotheses(cluster)
+    return best_hypothesis
+
+# Track Initiation Function
+def track_initiation(measurement):
+    # Check if it's a single measurement or group of measurements
+    if isinstance(measurement, list):
+        # Multiple measurements case
+        matched_track_id = correlate_measurement(measurement, track_database)
+
+        if matched_track_id:
+            # Existing track found, check state of track
+            track = track_database[matched_track_id]
+            if track.state == 'Pos1':
+                # Initialize filter state
+                track.filter_state = initialize_filter_state(measurement)
+                track.state = 'Tentative1'
+
+            elif track.state == 'Tentative1':
+                # Initialize filter state and update velocity
+                track.filter_state = initialize_filter_state(measurement)
+                track.velocity = get_velocity_from_measurement(measurement)
+
+            elif track.state == 'Firm':
+                # Perform JPDA, get the best hypothesis, and then start filtering
+                cluster = form_clusters(measurement)
+                best_measurement = jpda_for_multiple_measurements(cluster)
+                track.filter_state = predict_and_update_filter(track.filter_state, best_measurement)
+
+        else:
+            # No matching track, initiate a new track
+            new_track_id = get_free_track_id()
+            new_track = Track(new_track_id)
+            new_track.filter_state = initialize_filter_state(measurement)
+            track_database[new_track_id] = new_track
+
+    else:
+        # Single measurement case
+        matched_track_id = correlate_measurement([measurement], track_database)
+
+        if matched_track_id:
+            # Existing track found, check state of track
+            track = track_database[matched_track_id]
+            if track.state == 'Pos1':
+                # Initialize filter state
+                track.filter_state = initialize_filter_state(measurement)
+                track.state = 'Tentative1'
+
+            elif track.state == 'Tentative1':
+                # Initialize filter state and update velocity
+                track.filter_state = initialize_filter_state(measurement)
+                track.velocity = get_velocity_from_measurement(measurement)
+
+            elif track.state == 'Firm':
+                # Start filtering (Predict and Update step)
+                track.filter_state = predict_and_update_filter(track.filter_state, measurement)
+
+        else:
+            # No matching track, initiate a new track
+            new_track_id = get_free_track_id()
+            new_track = Track(new_track_id)
+            new_track.filter_state = initialize_filter_state(measurement)
+            track_database[new_track_id] = new_track
+
+# Function to get a free track ID from the track database
+def get_free_track_id():
+    for track_id, track in track_database.items():
+        if track.state == 'free':
+            return track_id
+    return len(track_database)  # New track ID
+
+# Placeholder correlation function (implement your logic here)
+def correlation_function(measurement, track):
+    # Define your correlation check logic (e.g., Mahalanobis distance, chi-square gating)
+    return True
+
+# Placeholder function to initialize filter state
+def initialize_filter_state(measurement):
+    # Logic to initialize Kalman filter state with the first measurement
+    return {"initialized": True}
+
+# Placeholder function to get velocity from measurement
+def get_velocity_from_measurement(measurement):
+    # Calculate vx, vy, vz from measurement
+    return {"vx": 0, "vy": 0, "vz": 0}
+
+# Placeholder function to perform predict and update step in Kalman filter
+def predict_and_update_filter(filter_state, measurement):
+    # Kalman filter prediction and update step
+    return filter_state  # Return updated state
+
+# Main Function (calls track initiation with measurements)
+def main():
+    # Example: measurement can be a list of measurements or a single one
+    measurements = [[10, 20, 30], [15, 25, 35]]  # Example measurement data
+
+    for measurement in measurements:
+        track_initiation(measurement)
+
+# Run main
+if __name__ == "__main__":
+    main()
