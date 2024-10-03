@@ -8,3 +8,5 @@ If it’s a multiple measurement -> if it matches the existing track id -> check
 If the measurement is not correlating or assigned to any exisiting track id -> then Initiate a new track id (take the free state from the track database)-> then assign that measurement to poss1 state and do Initialize filter state
 
 
+add a periodic checkign base on time every 0.5 ms -> check list of targets 
+if poss state wait for 2 seconds if no measurement matches then free the id ,if its in tentative or firm then wait for 5 seconds if nothing comes free the id (to do time out subtract the time of track id time and the new measurement time ) add this to my existing code 
